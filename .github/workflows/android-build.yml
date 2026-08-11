@@ -30,7 +30,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Install Android SDK command-line tools
+      - name: Install Android SDK command-line tools and accept licenses
         run: |
           sudo apt-get update
           sudo apt-get install -y wget unzip
@@ -40,7 +40,10 @@ jobs:
           mkdir -p $HOME/android-sdk/cmdline-tools/latest
           mv $HOME/android-sdk/cmdline-tools/cmdline-tools/* $HOME/android-sdk/cmdline-tools/latest/ || true
           export ANDROID_SDK_ROOT=$HOME/android-sdk
-          yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} "platform-tools" "platforms;android-33" "build-tools;33.0.0"
+          # Accept licenses first (ignore any broken pipe exit)
+          yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} --licenses || true
+          # Then install required SDK components
+          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} "platform-tools" "platforms;android-33" "build-tools;33.0.0"
         shell: bash
 
       - name: Add ANDROID_SDK_ROOT and update PATH
