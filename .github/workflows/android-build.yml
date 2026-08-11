@@ -39,16 +39,15 @@ jobs:
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline-tools.zip
           unzip -q /tmp/cmdline-tools.zip -d $HOME/android-sdk/cmdline-tools
           mkdir -p $HOME/android-sdk/cmdline-tools/latest
-          # move into latest/ if layout contains a cmdline-tools dir
           if [ -d "$HOME/android-sdk/cmdline-tools/cmdline-tools" ]; then
             mv $HOME/android-sdk/cmdline-tools/cmdline-tools/* $HOME/android-sdk/cmdline-tools/latest/ || true
           else
             mv $HOME/android-sdk/cmdline-tools/* $HOME/android-sdk/cmdline-tools/latest/ || true
           fi
           export ANDROID_SDK_ROOT=$HOME/android-sdk
-          # Accept licenses (ignore non-zero from broken pipe)
+          # Accept licenses (ignore broken-pipe non-zero)
           yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} --licenses || true
-          # Install required components (adjust platform/build-tools if your project needs a different SDK)
+          # Install required SDK components (change android-33 if your project needs different)
           $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} "platform-tools" "platforms;android-33" "build-tools;33.0.0" || true
         shell: bash
 
@@ -58,17 +57,38 @@ jobs:
           echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
           echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
+      - name: Prepare project folder (unzip if needed)
+        run: |
+          # If the repository contains a ZIP of the project, extract it
+          if [ -f PDFCraftStudio.zip ]; then
+            unzip -q PDFCraftStudio.zip -d .
+          fi
+          # If unzip created a directory named PDFCraftStudio, use it; else use repo root
+          if [ -d PDFCraftStudio ]; then
+            echo "PROJECT_DIR=PDFCraftStudio" >> $GITHUB_ENV
+          else
+            echo "PROJECT_DIR=." >> $GITHUB_ENV
+          fi
+        shell: bash
+
+      - name: Show project files (debug)
+        run: |
+          echo "Project dir: $PROJECT_DIR"
+          ls -la $PROJECT_DIR | sed -n '1,200p'
+        shell: bash
+
       - name: Build debug APK (use wrapper if present, else install gradle)
         run: |
-          # If gradlew exists in repo root, use it (recommended)
-          if [ -f ./gradlew ]; then
-            chmod +x ./gradlew
+          echo "Building from project dir: $PROJECT_DIR"
+          if [ -f $PROJECT_DIR/gradlew ]; then
+            chmod +x $PROJECT_DIR/gradlew
+            cd $PROJECT_DIR
             ./gradlew :app:assembleDebug --no-daemon
           else
-            # Fallback: install system gradle and build app module
             sudo apt-get update
             sudo apt-get install -y gradle
-            gradle :app:assembleDebug
+            # Use -p to run in the project directory if wrapper missing
+            gradle :app:assembleDebug -p "$PROJECT_DIR"
           fi
         shell: bash
 
@@ -76,4 +96,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: app-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
