@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       JAVA_HOME: /opt/hostedtoolcache/jdk/17*/x64
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,12 +39,17 @@ jobs:
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline-tools.zip
           unzip -q /tmp/cmdline-tools.zip -d $HOME/android-sdk/cmdline-tools
           mkdir -p $HOME/android-sdk/cmdline-tools/latest
-          mv $HOME/android-sdk/cmdline-tools/cmdline-tools/* $HOME/android-sdk/cmdline-tools/latest/ || true
+          # move into latest/ if layout contains a cmdline-tools dir
+          if [ -d "$HOME/android-sdk/cmdline-tools/cmdline-tools" ]; then
+            mv $HOME/android-sdk/cmdline-tools/cmdline-tools/* $HOME/android-sdk/cmdline-tools/latest/ || true
+          else
+            mv $HOME/android-sdk/cmdline-tools/* $HOME/android-sdk/cmdline-tools/latest/ || true
+          fi
           export ANDROID_SDK_ROOT=$HOME/android-sdk
-          # Accept licenses first (ignore any broken pipe exit)
+          # Accept licenses (ignore non-zero from broken pipe)
           yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} --licenses || true
-          # Then install required SDK components
-          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} "platform-tools" "platforms;android-33" "build-tools;33.0.0"
+          # Install required components (adjust platform/build-tools if your project needs a different SDK)
+          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} "platform-tools" "platforms;android-33" "build-tools;33.0.0" || true
         shell: bash
 
       - name: Add ANDROID_SDK_ROOT and update PATH
@@ -54,13 +60,15 @@ jobs:
 
       - name: Build debug APK (use wrapper if present, else install gradle)
         run: |
+          # If gradlew exists in repo root, use it (recommended)
           if [ -f ./gradlew ]; then
             chmod +x ./gradlew
-            ./gradlew assembleDebug --no-daemon
+            ./gradlew :app:assembleDebug --no-daemon
           else
+            # Fallback: install system gradle and build app module
             sudo apt-get update
             sudo apt-get install -y gradle
-            gradle assembleDebug
+            gradle :app:assembleDebug
           fi
         shell: bash
 
