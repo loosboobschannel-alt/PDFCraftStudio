@@ -45,9 +45,7 @@ jobs:
             mv $HOME/android-sdk/cmdline-tools/* $HOME/android-sdk/cmdline-tools/latest/ || true
           fi
           export ANDROID_SDK_ROOT=$HOME/android-sdk
-          # Accept licenses (ignore broken-pipe non-zero)
           yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} --licenses || true
-          # Install required SDK components (change android-33 if your project needs different)
           $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=${ANDROID_SDK_ROOT} "platform-tools" "platforms;android-33" "build-tools;33.0.0" || true
         shell: bash
 
@@ -57,38 +55,44 @@ jobs:
           echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
           echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
 
-      - name: Prepare project folder (unzip if needed)
+      - name: Prepare project folder (unzip and find project root)
+        id: prep
         run: |
-          # If the repository contains a ZIP of the project, extract it
+          # Unzip if there is a ZIP file
           if [ -f PDFCraftStudio.zip ]; then
             unzip -q PDFCraftStudio.zip -d .
           fi
-          # If unzip created a directory named PDFCraftStudio, use it; else use repo root
-          if [ -d PDFCraftStudio ]; then
-            echo "PROJECT_DIR=PDFCraftStudio" >> $GITHUB_ENV
-          else
-            echo "PROJECT_DIR=." >> $GITHUB_ENV
-          fi
-        shell: bash
 
-      - name: Show project files (debug)
-        run: |
-          echo "Project dir: $PROJECT_DIR"
-          ls -la $PROJECT_DIR | sed -n '1,200p'
+          # Try to find settings.gradle or settings.gradle.kts (project root)
+          found=$(find . -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1 || true)
+          if [ -n "$found" ]; then
+            PROJECT_DIR=$(dirname "$found")
+          else
+            # Fallback: try to find build.gradle(.kts) that contains 'com.android.application' (app module)
+            PROJECT_DIR="."
+            hit=$(find . -type f \( -name "build.gradle" -o -name "build.gradle.kts" \) -maxdepth 6 -print0 | xargs -0 grep -l "com.android.application" || true)
+            if [ -n "$hit" ]; then
+              PROJECT_DIR=$(dirname "$(echo "$hit" | head -n1)")
+            fi
+          fi
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "Found project dir: $PROJECT_DIR"
+          ls -la "$PROJECT_DIR" | sed -n '1,200p'
         shell: bash
 
       - name: Build debug APK (use wrapper if present, else install gradle)
         run: |
-          echo "Building from project dir: $PROJECT_DIR"
-          if [ -f $PROJECT_DIR/gradlew ]; then
-            chmod +x $PROJECT_DIR/gradlew
-            cd $PROJECT_DIR
-            ./gradlew :app:assembleDebug --no-daemon
+          echo "Building from: $PROJECT_DIR"
+          if [ -f "$PROJECT_DIR/gradlew" ]; then
+            chmod +x "$PROJECT_DIR/gradlew"
+            cd "$PROJECT_DIR"
+            ./gradlew assembleDebug --no-daemon
           else
             sudo apt-get update
             sudo apt-get install -y gradle
-            # Use -p to run in the project directory if wrapper missing
-            gradle :app:assembleDebug -p "$PROJECT_DIR"
+            # run gradle from the project directory (-p) so it finds settings.gradle
+            gradle assembleDebug -p "$PROJECT_DIR"
           fi
         shell: bash
 
